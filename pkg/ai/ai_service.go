@@ -24,6 +24,7 @@ type AIService struct {
 	APIEndpoint    string
 	DefaultPrompt  string
 	RequestTimeout time.Duration
+	Model          string
 }
 
 // GenerationRequest represents a request to generate a wordlist
@@ -40,15 +41,21 @@ type GenerationRequest struct {
 // NewAIService creates a new AI service
 func NewAIService(wordlistRepo *repository.WordlistRepository, wordlistDir string) *AIService {
 	// Get API key from environment
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	apiKey := os.Getenv("CLAUDE_API_KEY")
 	if apiKey == "" {
 		apiKey = os.Getenv("AI_API_KEY")
 	}
 
-	// Default OpenAI API endpoint
-	apiEndpoint := os.Getenv("AI_API_ENDPOINT")
+	// Default Claude API endpoint
+	apiEndpoint := os.Getenv("CLAUDE_API_ENDPOINT")
 	if apiEndpoint == "" {
-		apiEndpoint = "https://api.openai.com/v1/chat/completions"
+		apiEndpoint = "https://api.anthropic.com/v1/messages"
+	}
+
+	// Default model
+	model := os.Getenv("CLAUDE_MODEL")
+	if model == "" {
+		model = "claude-3-7-sonnet-20250219" // Latest Claude model as of May 2025
 	}
 
 	// Default prompt template
@@ -84,6 +91,7 @@ Be extremely thorough and creative with your generation.
 		WordlistDir:    wordlistDir,
 		APIKey:         apiKey,
 		APIEndpoint:    apiEndpoint,
+		Model:          model,
 		DefaultPrompt:  defaultPrompt,
 		RequestTimeout: 60 * time.Second,
 	}
@@ -93,7 +101,7 @@ Be extremely thorough and creative with your generation.
 func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest) (*repository.Wordlist, error) {
 	// Check if API key is configured
 	if s.APIKey == "" {
-		return nil, fmt.Errorf("AI API key not configured, set OPENAI_API_KEY environment variable")
+		return nil, fmt.Errorf("Claude API key not configured, set CLAUDE_API_KEY environment variable")
 	}
 
 	// Prepare the prompt by replacing placeholders
@@ -105,38 +113,36 @@ func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest)
 	prompt = strings.ReplaceAll(prompt, "{{.TargetDomain}}", req.TargetDomain)
 	prompt = strings.ReplaceAll(prompt, "{{.AdditionalContext}}", req.AdditionalContext)
 
-	// Build the request to OpenAI API
+	// Build the request to Claude API
 	type Message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}
 
-	type OpenAIRequest struct {
-		Model       string    `json:"model"`
+	type ClaudeRequest struct {
+		Model       string  `json:"model"`
 		Messages    []Message `json:"messages"`
-		Temperature float64   `json:"temperature"`
-		MaxTokens   int       `json:"max_tokens"`
+		MaxTokens   int     `json:"max_tokens"`
+		Temperature float64 `json:"temperature"`
+		System      string  `json:"system,omitempty"`
 	}
 
-	openAIReq := OpenAIRequest{
-		Model: "gpt-4", // Or use gpt-3.5-turbo for a more affordable option
+	claudeReq := ClaudeRequest{
+		Model: s.Model,
 		Messages: []Message{
-			{
-				Role:    "system",
-				Content: "You are a cybersecurity expert that helps generate subdomain wordlists for ethical hackers and security researchers.",
-			},
 			{
 				Role:    "user",
 				Content: prompt,
 			},
 		},
-		Temperature: 0.7,
 		MaxTokens:   2000,
+		Temperature: 0.7,
+		System:      "You are a cybersecurity expert that helps generate subdomain wordlists for ethical hackers and security researchers.",
 	}
 
-	reqBody, err := json.Marshal(openAIReq)
+	reqBody, err := json.Marshal(claudeReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal OpenAI request: %w", err)
+		return nil, fmt.Errorf("failed to marshal Claude request: %w", err)
 	}
 
 	// Make the HTTP request
@@ -146,7 +152,8 @@ func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+s.APIKey)
+	httpReq.Header.Set("X-API-Key", s.APIKey)
+	httpReq.Header.Set("Anthropic-Version", "2023-06-01")
 
 	client := &http.Client{
 		Timeout: s.RequestTimeout,
@@ -154,36 +161,34 @@ func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest)
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to make OpenAI API request: %w", err)
+		return nil, fmt.Errorf("failed to make Claude API request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := ioutil.ReadAll(resp.Body)
-		return nil, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("Claude API error (status %d): %s", resp.StatusCode, body)
 	}
 
 	// Parse the response
-	type OpenAIResponse struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
+	type ClaudeResponse struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
 	}
 
-	var openAIResp OpenAIResponse
-	err = json.NewDecoder(resp.Body).Decode(&openAIResp)
+	var claudeResp ClaudeResponse
+	err = json.NewDecoder(resp.Body).Decode(&claudeResp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode OpenAI response: %w", err)
+		return nil, fmt.Errorf("failed to decode Claude response: %w", err)
 	}
 
-	if len(openAIResp.Choices) == 0 {
-		return nil, fmt.Errorf("OpenAI API returned no choices")
+	if len(claudeResp.Content) == 0 {
+		return nil, fmt.Errorf("Claude API returned no content")
 	}
 
 	// Extract and clean the generated wordlist
-	wordlistContent := openAIResp.Choices[0].Message.Content
+	wordlistContent := claudeResp.Content[0].Text
 	lines := strings.Split(wordlistContent, "\n")
 	var cleanedLines []string
 
@@ -212,7 +217,7 @@ func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest)
 		"additionalContext": req.AdditionalContext,
 		"promptUsed":        prompt,
 		"generatedAt":       time.Now().Format(time.RFC3339),
-		"model":             "gpt-4", // Or whatever model was used
+		"model":             s.Model,
 	}
 
 	metadataJSON, err := json.Marshal(metadata)
@@ -230,8 +235,9 @@ func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest)
 # Generated: %s
 # Target Domain: %s
 # Entries: %d
+# AI Model: %s
 #
-# This wordlist was automatically generated using AI based on:
+# This wordlist was automatically generated using Claude AI based on:
 # - Company: %s
 # - Industry: %s
 # - Products: %s
@@ -245,6 +251,7 @@ func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest)
 		time.Now().Format(time.RFC3339),
 		req.TargetDomain,
 		len(cleanedLines),
+		s.Model,
 		req.CompanyName,
 		req.Industry,
 		req.Products,
@@ -267,7 +274,7 @@ func (s *AIService) GenerateWordlist(ctx context.Context, req GenerationRequest)
 		ID:          wordlistID,
 		Name:        req.WordlistName,
 		Filename:    filename,
-		Description: fmt.Sprintf("AI-generated wordlist for %s", req.CompanyName),
+		Description: fmt.Sprintf("AI-generated wordlist for %s using Claude", req.CompanyName),
 		EntryCount:  len(cleanedLines),
 		FileSize:    fileInfo.Size(),
 		Source:      "ai",
