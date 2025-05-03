@@ -39,7 +39,7 @@ A powerful DNS subdomain scanner with a web interface, database integration, and
 Deploy the DNS Subdomain Scanner with this one-liner:
 
 ```bash
-curl -s https://raw.githubusercontent.com/username/dns-scanner/main/deploy.sh | bash
+curl -s https://raw.githubusercontent.com/DataGuys/EDNSSCANNER/refs/heads/main/deploy.sh | bash
 ```
 
 This script will:
