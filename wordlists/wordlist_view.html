@@ -1,0 +1,134 @@
+{{define "content"}}
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h3 class="card-title mb-0">Wordlist: {{.Wordlist.Name}}</h3>
+        <div>
+            <a href="/wordlists" class="btn btn-light btn-sm me-2">Back to Wordlists</a>
+            <a href="/wordlists/{{.Wordlist.ID}}/download" class="btn btn-success btn-sm">Download</a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <table class="table table-bordered">
+                    <tr>
+                        <th>Name:</th>
+                        <td>{{.Wordlist.Name}}</td>
+                    </tr>
+                    <tr>
+                        <th>Entries:</th>
+                        <td>{{.Wordlist.EntryCount}}</td>
+                    </tr>
+                    <tr>
+                        <th>Size:</th>
+                        <td>{{.Wordlist.SizeFormatted}}</td>
+                    </tr>
+                    <tr>
+                        <th>Created:</th>
+                        <td>{{.Wordlist.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+                    </tr>
+                    <tr>
+                        <th>Source:</th>
+                        <td>
+                            {{if eq .Wordlist.Source "upload"}}
+                                <span class="badge bg-primary">Uploaded</span>
+                            {{else if eq .Wordlist.Source "ai"}}
+                                <span class="badge bg-success">AI Generated</span>
+                            {{else if eq .Wordlist.Source "default"}}
+                                <span class="badge bg-secondary">Default</span>
+                            {{else}}
+                                <span class="badge bg-info">{{.Wordlist.Source}}</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                {{if eq .Wordlist.Source "ai"}}
+                    <div class="card h-100">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0">AI Generation Metadata</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="aiMetadata">Loading metadata...</div>
+                        </div>
+                    </div>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            try {
+                                const metadata = JSON.parse('{{.Wordlist.Metadata}}');
+                                let html = '<table class="table table-sm">';
+                                
+                                if (metadata.companyName) {
+                                    html += `<tr><th>Company:</th><td>${metadata.companyName}</td></tr>`;
+                                }
+                                if (metadata.industry) {
+                                    html += `<tr><th>Industry:</th><td>${metadata.industry}</td></tr>`;
+                                }
+                                if (metadata.targetDomain) {
+                                    html += `<tr><th>Domain:</th><td>${metadata.targetDomain}</td></tr>`;
+                                }
+                                if (metadata.generatedAt) {
+                                    html += `<tr><th>Generated:</th><td>${metadata.generatedAt}</td></tr>`;
+                                }
+                                if (metadata.model) {
+                                    html += `<tr><th>AI Model:</th><td>${metadata.model}</td></tr>`;
+                                }
+                                
+                                html += '</table>';
+                                
+                                document.getElementById('aiMetadata').innerHTML = html;
+                            } catch (e) {
+                                document.getElementById('aiMetadata').innerHTML = 'Error loading metadata';
+                            }
+                        });
+                    </script>
+                {{end}}
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Wordlist Content</h5>
+                <div class="input-group input-group-sm" style="max-width: 300px;">
+                    <input type="text" class="form-control" id="contentSearch" placeholder="Search content...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="searchContent()">Search</button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="wordlist-content">
+                    <pre id="wordlistContent" style="max-height: 600px; overflow: auto; padding: 15px;">{{.Content}}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function searchContent() {
+        const searchTerm = document.getElementById('contentSearch').value.toLowerCase();
+        const content = document.getElementById('wordlistContent');
+        const lines = content.textContent.split('\n');
+        let resultHtml = '';
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.toLowerCase().includes(searchTerm)) {
+                const highlighted = line.replace(
+                    new RegExp(searchTerm, 'gi'), 
+                    match => `<span class="bg-warning">${match}</span>`
+                );
+                resultHtml += highlighted + '\n';
+            } else if (searchTerm === '') {
+                resultHtml += line + '\n';
+            }
+        }
+        
+        if (resultHtml === '' && searchTerm !== '') {
+            resultHtml = 'No matches found.';
+        }
+        
+        content.innerHTML = resultHtml;
+    }
+</script>
+{{end}}

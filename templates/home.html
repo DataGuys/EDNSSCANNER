@@ -1,0 +1,137 @@
+{{define "content"}}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h3 class="card-title mb-0">Start New Scan</h3>
+            </div>
+            <div class="card-body">
+                <form action="/scan" method="post">
+                    <div class="mb-3">
+                        <label for="domain" class="form-label">Domain to Scan</label>
+                        <input type="text" class="form-control" id="domain" name="domain" 
+                               placeholder="example.com" required>
+                        <div class="form-text">Enter a domain name without http:// or https://</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="wordlist" class="form-label">Wordlist (Optional)</label>
+                        <select class="form-select" id="wordlist" name="wordlist">
+                            <option value="">None (Passive Scan Only)</option>
+                            {{range .Wordlists}}
+                                <option value="{{.}}">{{.}}</option>
+                            {{end}}
+                        </select>
+                        <div class="form-text">Select a wordlist for brute force scanning or leave empty for passive techniques only</div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="threads" class="form-label">Threads</label>
+                                <input type="number" class="form-control" id="threads" name="threads" 
+                                       value="10" min="1" max="50">
+                                <div class="form-text">Number of concurrent requests (1-50)</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="timeout" class="form-label">Timeout (seconds)</label>
+                                <input type="number" class="form-control" id="timeout" name="timeout" 
+                                       value="5" min="1" max="30">
+                                <div class="form-text">DNS query timeout (1-30)</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Start Scan</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-secondary text-white">
+                <h3 class="card-title mb-0">About the Scanner</h3>
+            </div>
+            <div class="card-body">
+                <p>This DNS subdomain scanner uses multiple techniques to discover subdomains:</p>
+                <h5>Passive Techniques:</h5>
+                <ul>
+                    <li>Certificate Transparency logs</li>
+                    <li>VirusTotal passive DNS</li>
+                </ul>
+                <h5>Active Techniques (with wordlist):</h5>
+                <ul>
+                    <li>DNS brute forcing</li>
+                </ul>
+                <p>For each discovered subdomain, the scanner retrieves:</p>
+                <ul>
+                    <li>IP addresses</li>
+                    <li>DNS records (A, AAAA, CNAME, MX, TXT, NS, SOA)</li>
+                    <li>Creation date (when available via WHOIS)</li>
+                </ul>
+                <p>Results can be viewed in the web interface or downloaded as CSV for further analysis.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4 shadow">
+    <div class="card-header bg-dark text-white">
+        <h3 class="card-title mb-0">Recent Scans</h3>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Status</th>
+                        <th>Start Time</th>
+                        <th>Duration</th>
+                        <th>Results</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{if .Jobs}}
+                        {{range .Jobs}}
+                            <tr>
+                                <td>{{.Domain}}</td>
+                                <td>
+                                    {{if eq .Status "Running"}}
+                                        <span class="badge bg-primary">Running</span>
+                                    {{else if eq .Status "Completed"}}
+                                        <span class="badge bg-success">Completed</span>
+                                    {{else if eq .Status "Failed"}}
+                                        <span class="badge bg-danger">Failed</span>
+                                    {{else}}
+                                        <span class="badge bg-secondary">{{.Status}}</span>
+                                    {{end}}
+                                </td>
+                                <td>{{.StartTime.Format "2006-01-02 15:04:05"}}</td>
+                                <td>{{.Duration}}</td>
+                                <td>
+                                    {{if eq .Status "Completed"}}
+                                        {{len .Results}}
+                                    {{else}}
+                                        -
+                                    {{end}}
+                                </td>
+                                <td>
+                                    <a href="/jobs/{{.ID}}" class="btn btn-sm btn-primary">View</a>
+                                    {{if and (eq .Status "Completed") (gt (len .Results) 0)}}
+                                        <a href="/jobs/{{.ID}}/csv" class="btn btn-sm btn-success">CSV</a>
+                                    {{end}}
+                                </td>
+                            </tr>
+                        {{end}}
+                    {{else}}
+                        <tr>
+                            <td colspan="6" class="text-center">No scans yet. Start a new scan above.</td>
+                        </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{{end}}

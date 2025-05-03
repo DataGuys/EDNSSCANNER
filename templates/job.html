@@ -1,0 +1,153 @@
+{{define "content"}}
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h3 class="card-title mb-0">Scan Results: {{.Job.Domain}}</h3>
+        <a href="/" class="btn btn-light btn-sm">Back to Home</a>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <table class="table table-bordered">
+                    <tr>
+                        <th>Domain:</th>
+                        <td>{{.Job.Domain}}</td>
+                    </tr>
+                    <tr>
+                        <th>Status:</th>
+                        <td>
+                            {{if eq .Job.Status "Running"}}
+                                <span class="badge bg-primary">Running</span>
+                            {{else if eq .Job.Status "Completed"}}
+                                <span class="badge bg-success">Completed</span>
+                            {{else if eq .Job.Status "Failed"}}
+                                <span class="badge bg-danger">Failed</span>
+                            {{else}}
+                                <span class="badge bg-secondary">{{.Job.Status}}</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Start Time:</th>
+                        <td>{{.Job.StartTime.Format "2006-01-02 15:04:05"}}</td>
+                    </tr>
+                    {{if ne .Job.Status "Running"}}
+                    <tr>
+                        <th>End Time:</th>
+                        <td>{{.Job.EndTime.Format "2006-01-02 15:04:05"}}</td>
+                    </tr>
+                    {{end}}
+                    <tr>
+                        <th>Duration:</th>
+                        <td>{{.Job.Duration}}</td>
+                    </tr>
+                    {{if eq .Job.Status "Completed"}}
+                    <tr>
+                        <th>Results:</th>
+                        <td>{{len .Job.Results}} subdomains</td>
+                    </tr>
+                    {{end}}
+                </table>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">Scan Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-bordered mb-0">
+                            <tr>
+                                <th>Wordlist:</th>
+                                <td>{{if .Job.WordlistPath}}{{.Job.WordlistPath}}{{else}}None (Passive Only){{end}}</td>
+                            </tr>
+                            <tr>
+                                <th>Threads:</th>
+                                <td>{{.Job.Threads}}</td>
+                            </tr>
+                            <tr>
+                                <th>Timeout:</th>
+                                <td>{{.Job.Timeout}}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{if eq .Job.Status "Running"}}
+<div class="alert alert-info">
+    <h4 class="alert-heading">Scan in Progress</h4>
+    <p>The scan is currently running. This page will refresh automatically to show updates.</p>
+    <div class="progress">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+    </div>
+    <script>
+        // Auto refresh every 5 seconds while scan is running
+        setTimeout(function() {
+            window.location.reload();
+        }, 5000);
+    </script>
+</div>
+{{else if eq .Job.Status "Failed"}}
+<div class="alert alert-danger">
+    <h4 class="alert-heading">Scan Failed</h4>
+    <p>The scan failed to complete. Please try again or check the server logs for more information.</p>
+</div>
+{{else if and (eq .Job.Status "Completed") (eq (len .Job.Results) 0)}}
+<div class="alert alert-warning">
+    <h4 class="alert-heading">No Results Found</h4>
+    <p>The scan completed successfully, but no subdomains were found. Try using a wordlist for brute force scanning.</p>
+</div>
+{{end}}
+
+{{if and (eq .Job.Status "Completed") (gt (len .Job.Results) 0)}}
+<div class="card shadow">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+        <h3 class="card-title mb-0">Discovered Subdomains</h3>
+        <a href="/jobs/{{.Job.ID}}/csv" class="btn btn-light btn-sm">Download CSV</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0" id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Subdomain</th>
+                        <th>IP Addresses</th>
+                        <th>Creation Date</th>
+                        <th>Record Types</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Job.Results}}
+                    <tr>
+                        <td>{{.Subdomain}}</td>
+                        <td>{{join .IPAddresses ", "}}</td>
+                        <td>{{.CreationDate}}</td>
+                        <td>
+                            {{$records := .DNSRecords}}
+                            {{range $type, $values := $records}}
+                                <span class="badge bg-secondary me-1">{{$type}}</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Initialize DataTable for better table functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof(jQuery) !== 'undefined' && typeof(jQuery.fn.DataTable) !== 'undefined') {
+            jQuery('#resultsTable').DataTable({
+                "pageLength": 25,
+                "order": [[0, "asc"]]
+            });
+        }
+    });
+</script>
+{{end}}
+{{end}}
