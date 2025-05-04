@@ -73,7 +73,319 @@ docker-compose up -d
 # Access the web interface
 echo "DNS Scanner available at: http://localhost:8080"
 ```
+# DNS Subdomain Scanner: Azure Deployment Guide
 
+This guide walks through the complete process of deploying the DNS Subdomain Scanner to Azure with secure access through Azure AD Application Proxy.
+
+## Prerequisites
+
+- [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli) installed
+- [Docker](https://docs.docker.com/get-docker/) installed
+- An Azure subscription with adequate permissions
+- An Azure AD tenant with Global Administrator or Application Administrator permissions
+
+## Step 1: Prepare Your Environment
+
+### Login to Azure
+
+```bash
+az login
+```
+
+### Set Default Subscription (if you have multiple)
+
+```bash
+az account set --subscription "Your Subscription Name"
+```
+
+### Create a Resource Group
+
+```bash
+az group create --name dns-scanner-rg --location eastus
+```
+
+## Step 2: Deploy Azure Container Registry (ACR)
+
+### Create ACR
+
+```bash
+az acr create \
+  --resource-group dns-scanner-rg \
+  --name dnsscannerprod \
+  --sku Standard \
+  --admin-enabled true
+```
+
+### Login to ACR
+
+```bash
+az acr login --name dnsscannerprod
+```
+
+## Step 3: Build and Push Docker Image
+
+### Navigate to App Directory
+
+```bash
+cd /path/to/dns-scanner
+```
+
+### Build Docker Image
+
+```bash
+docker build -t dnsscannerprod.azurecr.io/dns-scanner:v1.0 .
+```
+
+### Push Image to ACR
+
+```bash
+docker push dnsscannerprod.azurecr.io/dns-scanner:v1.0
+```
+
+## Step 4: Create Azure Database for PostgreSQL
+
+### Create PostgreSQL Server
+
+```bash
+az postgres flexible-server create \
+  --resource-group dns-scanner-rg \
+  --name dns-scanner-db \
+  --location eastus \
+  --admin-user dnsscanner \
+  --admin-password "SecurePassword123!" \
+  --sku-name Standard_B1ms \
+  --tier Burstable \
+  --version 14
+
+# Allow Azure services to access the PostgreSQL server
+az postgres flexible-server firewall-rule create \
+  --resource-group dns-scanner-rg \
+  --name dns-scanner-db \
+  --rule-name AllowAzureServices \
+  --start-ip-address 0.0.0.0 \
+  --end-ip-address 0.0.0.0
+```
+
+### Create Database
+
+```bash
+az postgres flexible-server db create \
+  --resource-group dns-scanner-rg \
+  --server-name dns-scanner-db \
+  --database-name dnsscanner
+```
+
+## Step 5: Deploy App Service
+
+### Create App Service Plan
+
+```bash
+az appservice plan create \
+  --resource-group dns-scanner-rg \
+  --name dns-scanner-plan \
+  --is-linux \
+  --sku P1V2
+```
+
+### Create Web App
+
+```bash
+# Get ACR credentials
+ACR_USERNAME=$(az acr credential show --name dnsscannerprod --query "username" -o tsv)
+ACR_PASSWORD=$(az acr credential show --name dnsscannerprod --query "passwords[0].value" -o tsv)
+
+# Create Web App
+az webapp create \
+  --resource-group dns-scanner-rg \
+  --plan dns-scanner-plan \
+  --name dns-scanner-app \
+  --deployment-container-image-name dnsscannerprod.azurecr.io/dns-scanner:v1.0
+
+# Configure container settings
+az webapp config container set \
+  --name dns-scanner-app \
+  --resource-group dns-scanner-rg \
+  --docker-custom-image-name dnsscannerprod.azurecr.io/dns-scanner:v1.0 \
+  --docker-registry-server-url https://dnsscannerprod.azurecr.io \
+  --docker-registry-server-user $ACR_USERNAME \
+  --docker-registry-server-password $ACR_PASSWORD
+```
+
+### Configure App Settings
+
+```bash
+az webapp config appsettings set \
+  --resource-group dns-scanner-rg \
+  --name dns-scanner-app \
+  --settings \
+    DB_HOST="dns-scanner-db.postgres.database.azure.com" \
+    DB_PORT=5432 \
+    DB_USER="dnsscanner@dns-scanner-db" \
+    DB_PASSWORD="SecurePassword123!" \
+    DB_NAME="dnsscanner" \
+    DB_SSLMODE="require"
+```
+
+## Step 6: Register Application in Azure AD
+
+### Create App Registration
+
+```bash
+# Get your tenant ID
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+# Create App Registration
+APP_ID=$(az ad app create \
+  --display-name "DNS Scanner App" \
+  --sign-in-audience AzureADMyOrg \
+  --web-redirect-uris "https://dns-scanner-app.azurewebsites.net/.auth/login/aad/callback" \
+  --query appId -o tsv)
+
+# Create Service Principal for the App
+az ad sp create --id $APP_ID
+```
+
+## Step 7: Configure Azure AD Authentication in App Service
+
+```bash
+# Get your tenant ID
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+# Configure authentication settings
+az webapp auth update \
+  --resource-group dns-scanner-rg \
+  --name dns-scanner-app \
+  --enabled true \
+  --action LoginWithAzureActiveDirectory \
+  --aad-token-issuer-url "https://sts.windows.net/$TENANT_ID/" \
+  --aad-client-id $APP_ID
+```
+
+## Step 8: Configure Azure App Proxy for the Application
+
+This step needs to be done in the Azure Portal:
+
+1. Navigate to Azure Active Directory > Enterprise applications
+2. Create a new application > On-premises application
+3. Fill in the details:
+   - Name: DNS Scanner App
+   - Internal URL: https://dns-scanner-app.azurewebsites.net
+   - External URL: Auto-generated or custom domain
+   - Pre-authentication method: Azure Active Directory
+   - Connector Group: Default
+
+## Step 9: Configure Conditional Access Policy
+
+1. Navigate to Azure Active Directory > Security > Conditional Access
+2. Create a new policy targeting the DNS Scanner App
+3. Configure conditions:
+   - Users and groups: Select appropriate groups
+   - Cloud apps or actions: Select the DNS Scanner App
+   - Conditions: Configure as needed (e.g., device platforms, locations)
+4. Access controls:
+   - Grant: Require multi-factor authentication
+   - Session: Configure session controls as needed
+
+## Step 10: Test the Deployment
+
+1. Navigate to the external URL of your application (from App Proxy)
+2. You should be redirected to Azure AD login
+3. After authentication and MFA, you should be able to access the DNS Scanner application
+
+## Step 11: Optional - Configure Persistent Storage
+
+For production use, you may want to configure persistent storage for wordlists and scan results:
+
+```bash
+# Create an Azure Storage Account
+az storage account create \
+  --name dnsscannerstorage \
+  --resource-group dns-scanner-rg \
+  --location eastus \
+  --sku Standard_LRS
+
+# Create a file share
+az storage share create \
+  --name wordlists \
+  --account-name dnsscannerstorage
+
+# Get storage account key
+STORAGE_KEY=$(az storage account keys list \
+  --resource-group dns-scanner-rg \
+  --account-name dnsscannerstorage \
+  --query "[0].value" -o tsv)
+
+# Configure the Web App to use the file share
+az webapp config storage-account add \
+  --resource-group dns-scanner-rg \
+  --name dns-scanner-app \
+  --custom-id wordlists \
+  --storage-type AzureFiles \
+  --share-name wordlists \
+  --account-name dnsscannerstorage \
+  --access-key "$STORAGE_KEY" \
+  --mount-path /app/wordlists
+```
+
+## Troubleshooting
+
+### Check Container Logs
+
+```bash
+az webapp log tail --name dns-scanner-app --resource-group dns-scanner-rg
+```
+
+### Check Deployment Status
+
+```bash
+az webapp deployment container show-cd-url --name dns-scanner-app --resource-group dns-scanner-rg
+```
+
+### Restart Web App
+
+```bash
+az webapp restart --name dns-scanner-app --resource-group dns-scanner-rg
+```
+
+## Security Considerations
+
+1. **Database Security**:
+   - Rotate database passwords regularly
+   - Use Azure Private Link for database connectivity if possible
+
+2. **Container Registry**:
+   - Implement vulnerability scanning for container images
+   - Use Azure Container Registry tasks for automated builds
+
+3. **Application Security**:
+   - Regularly review and update Azure AD application settings
+   - Configure proper RBAC for the application
+
+4. **Network Security**:
+   - Consider implementing a Virtual Network for the App Service
+   - Use Azure Front Door or Application Gateway for additional protection
+
+## Bicep Deployment Alternative
+
+If you prefer an Infrastructure-as-Code approach, use the provided Bicep template:
+
+1. Save the template to a file named `dns-scanner-deploy.bicep`
+2. Deploy using:
+
+```bash
+az deployment group create \
+  --resource-group dns-scanner-rg \
+  --template-file dns-scanner-deploy.bicep \
+  --parameters dbAdminPassword="SecurePassword123!"
+```
+
+## Cleanup Resources
+
+When you no longer need the resources, you can delete the entire resource group:
+
+```bash
+az group delete --name dns-scanner-rg --yes
+```
 ## Usage
 
 ### Basic Scanning
