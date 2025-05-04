@@ -23,7 +23,7 @@ param dbAdminPassword string
 param tenantId string = subscription().tenantId
 
 // Resource names
-var acrName = '${namePrefix}acr'
+var acrName = '${namePrefix}acredns'
 var appServicePlanName = '${namePrefix}-plan'
 var webAppName = '${namePrefix}-app'
 var postgresServerName = '${namePrefix}-db'
@@ -190,18 +190,8 @@ resource authSettings 'Microsoft.Web/sites/config@2022-03-01' = {
   }
 }
 
-// App Registration for Azure AD
-resource appRegistration 'Microsoft.AzureActiveDirectory/b2cDirectories/applications@2019-01-01-preview' = {
-  name: webAppName
-  properties: {
-    displayName: 'DNS Scanner App'
-    web: {
-      redirectUris: [
-        'https://${webApp.properties.defaultHostName}/.auth/login/aad/callback'
-      ]
-    }
-  }
-}
+// Output app ID for script use
+output appName string = webAppName
 
 // Output important values
 output acrLoginServer string = acr.properties.loginServer
