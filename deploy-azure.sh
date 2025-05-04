@@ -107,7 +107,23 @@ az webapp config container set \
   --docker-registry-server-url "https://$ACR_LOGIN_SERVER" \
   --docker-registry-server-user $ACR_USERNAME \
   --docker-registry-server-password $ACR_PASSWORD
+# Add this after infrastructure deployment in deploy-azure.sh
+echo "Creating Azure AD application registration..."
+APP_DISPLAY_NAME="DNS Scanner App"
+REDIRECT_URI="https://${WEBAPP_URL}/.auth/login/aad/callback"
 
+# Create app registration using CLI
+APP_ID=$(az ad app create \
+  --display-name "$APP_DISPLAY_NAME" \
+  --sign-in-audience AzureADMyOrg \
+  --web-redirect-uris "$REDIRECT_URI" \
+  --query "appId" \
+  --output tsv)
+
+echo "Created app registration with ID: $APP_ID"
+
+# Create service principal for the app
+az ad sp create --id $APP_ID
 # Setup Azure AD App Proxy
 echo "Setting up Azure AD Application Proxy..."
 TENANT_ID=$(az account show --query tenantId -o tsv)
