@@ -51,7 +51,7 @@ echo "Working in temporary directory: $TEMP_DIR"
 
 # Clone the repository
 echo "Cloning repository..."
-git clone --depth 1 https://github.com/username/dns-scanner.git .
+git clone --depth 1 https://github.com/DataGuys/EDNSSCANNER.git .
 
 # Create resource group if it doesn't exist
 echo "Ensuring resource group exists..."
