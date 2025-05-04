@@ -23,7 +23,9 @@ A powerful DNS subdomain scanner with a web interface, database integration, and
 Deploy the entire solution with a single command in Azure Cloud Shell:
 
 ```bash
-curl -L https://raw.githubusercontent.com/username/dns-scanner/main/deploy-azure.sh | bash -s -- -g "dns-scanner-rg" -l "eastus" -n "dnsscanner" -p "YourSecurePassword123!"
+read -s -p "Enter your secure password: " SECUREPASSWORD
+echo
+curl -L https://raw.githubusercontent.com/DataGuys/EDNSSCANNER/refs/heads/main/deploy-azure.sh | bash -s -- -g "dns-scanner-rg" -l "eastus" -n "dnsscanner" -p "$SECUREPASSWORD"
 ```
 
 Parameters:
