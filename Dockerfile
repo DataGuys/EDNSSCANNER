@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o dns-scanner ./cmd/server
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata curl
 
 # Create non-root user
 RUN adduser -D -h /app scanner
@@ -38,8 +38,21 @@ COPY --from=builder --chown=scanner:scanner /app/static ./static
 COPY --from=builder --chown=scanner:scanner /app/templates ./templates
 COPY --from=builder --chown=scanner:scanner /app/wordlists ./wordlists
 
+# Add health check for Azure
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/ || exit 1
+
 # Expose web interface port
 EXPOSE 8080
 
+# Add startup script for Azure compatibility
+RUN echo '#!/bin/sh\n\
+# Create directories if they don't exist\n\
+mkdir -p /app/wordlists /app/static /app/templates\n\
+\n\
+# Start the application\n\
+exec ./dns-scanner "$@"\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
 # Start the application
-CMD ["./dns-scanner"]
+CMD ["/app/start.sh"]
