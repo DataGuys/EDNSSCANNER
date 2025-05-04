@@ -4,7 +4,7 @@ services:
   dns-scanner:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.azure
     container_name: dns-scanner
     depends_on:
       - postgres
@@ -20,16 +20,25 @@ services:
     restart: unless-stopped
     environment:
       - TZ=UTC
+      # Database configuration matching Azure PostgreSQL Flexible Server
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=dnsscanner
       - DB_PASSWORD=securepassword
       - DB_NAME=dnsscanner
       - DB_SSLMODE=disable
+      # Azure Application Insights (optional)
+      - APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}
       # Optional: OpenAI API key for AI-powered wordlist generation
-      # - OPENAI_API_KEY=your_api_key_here
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     networks:
       - dns-scanner-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
   postgres:
     image: postgres:14-alpine
@@ -45,13 +54,33 @@ services:
     restart: unless-stopped
     networks:
       - dns-scanner-network
-    command: ["postgres", "-c", "log_statement=all"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dnsscanner"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Azure Storage Emulator - for local testing
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: dns-scanner-storage
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - azurite-data:/data
+    networks:
+      - dns-scanner-network
 
 volumes:
   wordlists:
     name: dns-scanner-wordlists
   postgres-data:
     name: dns-scanner-db-data
+  azurite-data:
+    name: dns-scanner-azurite-data
 
 networks:
   dns-scanner-network:
